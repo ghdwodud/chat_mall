@@ -2,6 +2,12 @@
   <div class="chat-room">
     <div class="chat-room-header">
       <div class="room-info">
+        <el-button 
+          v-if="isMobile" 
+          icon="el-icon-arrow-left" 
+          @click="goBack"
+          class="back-button"
+        ></el-button>
         <h2>{{ chatStore.currentRoom?.name || '채팅방' }}</h2>
         <el-tag size="small">{{ participantsCount }}명 참여중</el-tag>
       </div>
@@ -49,7 +55,8 @@
     <el-dialog
       v-model="inviteDialogVisible"
       title="사용자 초대"
-      width="30%"
+      width="90%"
+      :fullscreen="isMobile"
     >
       <el-form :model="inviteForm">
         <el-form-item label="사용자 이름">
@@ -68,51 +75,77 @@
 
 <script>
 import { useChatStore } from '../stores/chat'
+import { ref, computed, watch, nextTick } from 'vue'
 
 export default {
   name: 'ChatRoom',
   setup() {
     const chatStore = useChatStore()
-    return { chatStore }
-  },
-  data() {
-    return {
-      participantsCount: 3,
-      newMessage: '',
-      inviteDialogVisible: false,
-      inviteForm: {
-        username: ''
-      }
-    }
-  },
-  methods: {
-    formatTime(timestamp) {
+    const participantsCount = ref(3)
+    const newMessage = ref('')
+    const inviteDialogVisible = ref(false)
+    const inviteForm = ref({
+      username: ''
+    })
+    const isMobile = computed(() => window.innerWidth <= 768)
+
+    // 채팅방이 변경될 때마다 스크롤을 맨 아래로 이동
+    watch(() => chatStore.messages, () => {
+      nextTick(() => {
+        const scrollbar = document.querySelector('.el-scrollbar__wrap')
+        if (scrollbar) {
+          scrollbar.scrollTop = scrollbar.scrollHeight
+        }
+      })
+    })
+
+    const formatTime = (timestamp) => {
       return new Intl.DateTimeFormat('ko-KR', {
         hour: '2-digit',
         minute: '2-digit'
       }).format(timestamp)
-    },
-    sendMessage() {
-      if (this.newMessage.trim()) {
-        this.chatStore.sendMessage(this.newMessage)
-        this.newMessage = ''
-        this.$nextTick(() => {
-          this.$refs.scrollbar.setScrollTop(999999)
-        })
+    }
+
+    const sendMessage = () => {
+      if (newMessage.value.trim()) {
+        chatStore.sendMessage(newMessage.value)
+        newMessage.value = ''
       }
-    },
-    inviteUser() {
-      this.inviteDialogVisible = true
-    },
-    sendInvite() {
-      if (this.inviteForm.username.trim()) {
+    }
+
+    const inviteUser = () => {
+      inviteDialogVisible.value = true
+    }
+
+    const sendInvite = () => {
+      if (inviteForm.value.username.trim()) {
         // TODO: 실제 초대 로직 구현
-        this.inviteDialogVisible = false
-        this.inviteForm.username = ''
+        inviteDialogVisible.value = false
+        inviteForm.value.username = ''
       }
-    },
-    leaveRoom() {
-      this.chatStore.leaveRoom()
+    }
+
+    const leaveRoom = () => {
+      chatStore.leaveRoom()
+    }
+
+    const goBack = () => {
+      chatStore.leaveRoom()
+    }
+
+    return {
+      chatStore,
+      participantsCount,
+      newMessage,
+      inviteDialogVisible,
+      inviteForm,
+      isMobile,
+      formatTime,
+      sendMessage,
+      inviteUser,
+      sendInvite,
+      leaveRoom,
+      goBack
     }
   }
 }
@@ -124,6 +157,7 @@ export default {
   display: flex;
   flex-direction: column;
   height: 100%;
+  background-color: var(--el-bg-color);
 }
 
 .chat-room-header {
@@ -215,5 +249,36 @@ export default {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
+}
+
+.back-button {
+  padding: 8px;
+  margin-right: 8px;
+}
+
+@media (max-width: 768px) {
+  .chat-room-header {
+    padding: 12px;
+  }
+
+  .room-info h2 {
+    font-size: 1.1rem;
+  }
+
+  .message {
+    max-width: 85%;
+  }
+
+  .message-header {
+    font-size: 0.8em;
+  }
+
+  .chat-input {
+    padding: 12px;
+  }
+
+  .chat-input .el-button {
+    height: 60px;
+  }
 }
 </style> 

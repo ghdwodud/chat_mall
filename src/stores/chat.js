@@ -35,7 +35,9 @@ export const useChatStore = defineStore('chat', {
         let roomIndex
         switch (data.type) {
           case 'MESSAGE':
-            this.addMessage(data.message)
+            if (this.currentRoom && data.message.roomId === this.currentRoom.id) {
+              this.addMessage(data.message)
+            }
             break
           case 'ROOM_UPDATE':
             roomIndex = this.rooms.findIndex(r => r.id === data.room.id)
