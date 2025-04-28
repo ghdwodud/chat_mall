@@ -1,101 +1,118 @@
 <template>
   <div class="chat-room">
-    <div class="chat-header">
-      <h2>{{ roomName }}</h2>
-      <div class="online-users">
-        접속자 수: {{ onlineUsers }}
+    <div class="chat-room-header">
+      <div class="room-info">
+        <h2>{{ chatStore.currentRoom?.name || '채팅방' }}</h2>
+        <el-tag size="small">{{ participantsCount }}명 참여중</el-tag>
       </div>
+      <el-button-group>
+        <el-button size="small" @click="inviteUser">
+          초대하기
+        </el-button>
+        <el-button size="small" type="danger" @click="leaveRoom">
+          나가기
+        </el-button>
+      </el-button-group>
     </div>
-    
+
     <div class="chat-messages" ref="messageContainer">
-      <div v-for="(message, index) in messages" 
-           :key="index" 
-           :class="['message', message.sender === currentUser ? 'sent' : 'received']">
-        <div class="message-info">
-          <span class="sender">{{ message.sender }}</span>
-          <span class="time">{{ formatTime(message.timestamp) }}</span>
+      <el-scrollbar height="calc(100vh - 280px)" ref="scrollbar">
+        <div class="message-list">
+          <div v-for="message in chatStore.messages" :key="message.id" 
+               :class="['message', { 'message-mine': message.sender === chatStore.currentUser }]">
+            <div class="message-header">
+              <span class="sender">{{ message.sender }}</span>
+              <span class="time">{{ formatTime(message.timestamp) }}</span>
+            </div>
+            <div class="message-content">
+              {{ message.content }}
+            </div>
+          </div>
         </div>
-        <div class="message-content">{{ message.content }}</div>
-      </div>
+      </el-scrollbar>
     </div>
 
     <div class="chat-input">
-      <input 
-        type="text" 
-        v-model="newMessage" 
-        @keyup.enter="sendMessage"
-        placeholder="메시지를 입력하세요..."
+      <el-input
+        v-model="newMessage"
+        placeholder="메시지를 입력하세요"
+        :rows="3"
+        type="textarea"
+        @keyup.enter.exact="sendMessage"
       >
-      <button @click="sendMessage">전송</button>
+      </el-input>
+      <el-button type="primary" @click="sendMessage" :disabled="!newMessage.trim()">
+        전송
+      </el-button>
     </div>
+
+    <el-dialog
+      v-model="inviteDialogVisible"
+      title="사용자 초대"
+      width="30%"
+    >
+      <el-form :model="inviteForm">
+        <el-form-item label="사용자 이름">
+          <el-input v-model="inviteForm.username" placeholder="초대할 사용자의 이름을 입력하세요"></el-input>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="inviteDialogVisible = false">취소</el-button>
+          <el-button type="primary" @click="sendInvite">초대하기</el-button>
+        </span>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script>
+import { useChatStore } from '../stores/chat'
+
 export default {
   name: 'ChatRoom',
+  setup() {
+    const chatStore = useChatStore()
+    return { chatStore }
+  },
   data() {
     return {
-      roomName: '채팅방',
-      currentUser: 'User1',
-      onlineUsers: 0,
-      messages: [],
+      participantsCount: 3,
       newMessage: '',
-      websocket: null
+      inviteDialogVisible: false,
+      inviteForm: {
+        username: ''
+      }
     }
   },
   methods: {
     formatTime(timestamp) {
-      return new Date(timestamp).toLocaleTimeString('ko-KR', {
+      return new Intl.DateTimeFormat('ko-KR', {
         hour: '2-digit',
         minute: '2-digit'
-      });
+      }).format(timestamp)
     },
     sendMessage() {
-      if (!this.newMessage.trim()) return;
-      
-      const message = {
-        type: 'CHAT',
-        sender: this.currentUser,
-        content: this.newMessage,
-        timestamp: new Date().getTime()
-      };
-      
-      // WebSocket을 통해 메시지 전송
-      this.websocket.send(JSON.stringify(message));
-      this.newMessage = '';
+      if (this.newMessage.trim()) {
+        this.chatStore.sendMessage(this.newMessage)
+        this.newMessage = ''
+        this.$nextTick(() => {
+          this.$refs.scrollbar.setScrollTop(999999)
+        })
+      }
     },
-    scrollToBottom() {
-      this.$nextTick(() => {
-        const container = this.$refs.messageContainer;
-        container.scrollTop = container.scrollHeight;
-      });
+    inviteUser() {
+      this.inviteDialogVisible = true
     },
-    initializeWebSocket() {
-      // WebSocket 연결 설정
-      this.websocket = new WebSocket('ws://localhost:8080/chat');
-      
-      this.websocket.onmessage = (event) => {
-        const message = JSON.parse(event.data);
-        this.messages.push(message);
-        this.scrollToBottom();
-      };
-
-      this.websocket.onopen = () => {
-        console.log('WebSocket 연결됨');
-      };
-
-      this.websocket.onclose = () => {
-        console.log('WebSocket 연결 종료');
-      };
-    }
-  },
-  mounted() {
-    this.initializeWebSocket();
-  },
-  beforeUnmount() {
-    if (this.websocket) {
-      this.websocket.close();
+    sendInvite() {
+      if (this.inviteForm.username.trim()) {
+        // TODO: 실제 초대 로직 구현
+        this.inviteDialogVisible = false
+        this.inviteForm.username = ''
+      }
+    },
+    leaveRoom() {
+      this.chatStore.leaveRoom()
     }
   }
 }
@@ -103,87 +120,100 @@ export default {
 
 <style scoped>
 .chat-room {
+  flex-grow: 1;
   display: flex;
   flex-direction: column;
   height: 100%;
-  background-color: #f5f5f5;
 }
 
-.chat-header {
-  padding: 1rem;
-  background-color: #ffffff;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+.chat-room-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--el-border-color);
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
+.room-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.room-info h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  color: var(--el-text-color-primary);
+}
+
 .chat-messages {
   flex-grow: 1;
-  overflow-y: auto;
-  padding: 1rem;
+  background-color: var(--el-bg-color-page);
+}
+
+.message-list {
+  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 16px;
 }
 
 .message {
   max-width: 70%;
-  padding: 0.5rem 1rem;
-  border-radius: 1rem;
-  margin: 0.5rem 0;
+  padding: 12px;
+  border-radius: 8px;
+  background-color: var(--el-bg-color);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
-.sent {
-  align-self: flex-end;
-  background-color: #42b983;
-  color: white;
+.message-mine {
+  margin-left: auto;
+  background-color: var(--el-color-primary-light-9);
 }
 
-.received {
-  align-self: flex-start;
-  background-color: white;
-}
-
-.message-info {
-  font-size: 0.8rem;
-  margin-bottom: 0.3rem;
+.message-header {
+  margin-bottom: 4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9em;
 }
 
 .sender {
-  font-weight: bold;
-  margin-right: 0.5rem;
+  font-weight: 500;
+  color: var(--el-text-color-primary);
 }
 
 .time {
-  color: #666;
+  color: var(--el-text-color-secondary);
+}
+
+.message-content {
+  color: var(--el-text-color-primary);
+  line-height: 1.4;
+  white-space: pre-wrap;
 }
 
 .chat-input {
-  padding: 1rem;
-  background-color: white;
+  padding: 16px;
+  border-top: 1px solid var(--el-border-color);
   display: flex;
-  gap: 1rem;
+  gap: 12px;
+  align-items: flex-start;
 }
 
-.chat-input input {
+.chat-input .el-input {
   flex-grow: 1;
-  padding: 0.5rem;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  outline: none;
 }
 
-.chat-input button {
-  padding: 0.5rem 1rem;
-  background-color: #42b983;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
+.chat-input .el-button {
+  flex-shrink: 0;
+  height: 80px;
 }
 
-.chat-input button:hover {
-  background-color: #3aa876;
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
 }
 </style> 
